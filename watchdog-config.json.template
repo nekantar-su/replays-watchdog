@@ -1,0 +1,18 @@
+{
+  "slackBotToken": "xoxb-YOUR-BOT-TOKEN",
+  "slackActiveChannelId": "C_ACTIVE_CHANNEL_ID",
+  "slackLogChannelId": "C_LOG_CHANNEL_ID",
+  "slackDigestChannelId": "C_DIGEST_CHANNEL_ID",
+  "heartbeatUrl": "https://replays-heartbeat.niko-8fa.workers.dev/ping?tenant=TENANT_CODE",
+  "thresholds": {
+    "cpuPercent": 80,
+    "cpuSustainedChecks": 3,
+    "bootDiskPercent": 85,
+    "bootDiskMinGb": 10,
+    "externalDiskPercent": 90,
+    "logMaxMb": 500,
+    "pendingQueueGrowthChecks": 3,
+    "idleGraceChecks": 2
+  },
+  "allowReboot": false
+}
