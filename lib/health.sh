@@ -69,11 +69,17 @@ unhealthy_cameras() {
 
 get_disk_mount() {
   local mount="$1"
-  echo "$HEALTH_DISK_MOUNTS" | jq -c --arg m "$mount" '.[] | select(.mount == $m)'
+  echo "$HEALTH_DISK_MOUNTS" | jq -c --arg m "$mount" \
+    '.[] | select((.mount | ascii_downcase) == ($m | ascii_downcase))'
 }
 
+# Check directly — health endpoint only reports boot disk, not external SSD
 external_ssd_present() {
-  local count
-  count=$(echo "$HEALTH_DISK_MOUNTS" | jq '[.[] | select(.mount == "/Volumes/Replays")] | length')
-  [ "$count" -gt "0" ] && echo "true" || echo "false"
+  [ -d "/Volumes/Replays" ] || [ -d "/Volumes/REPLAYS" ] && echo "true" || echo "false"
+}
+
+# Get disk usage % directly from df — use for external SSD (not in health data)
+get_disk_use_pct() {
+  local mount="$1"
+  df "$mount" 2>/dev/null | awk 'NR==2 {gsub(/%/,""); print $5}' || echo "0"
 }

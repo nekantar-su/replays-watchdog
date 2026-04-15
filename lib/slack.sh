@@ -29,19 +29,34 @@ slack_delete() {
       '{channel: $ch, ts: $ts}')" &>/dev/null || true
 }
 
-slack_upload_file() {
+slack_update() {
   local channel="$1"
-  local filepath="$2"
-  local filename="$3"
-  local thread_ts="${4:-}"
-
-  local params
-  params=(-F "channels=$channel" -F "filename=$filename" -F "file=@$filepath")
-  [ -n "$thread_ts" ] && params+=(-F "thread_ts=$thread_ts")
-
-  curl -sf -X POST "$SLACK_API/files.upload" \
+  local ts="$2"
+  local text="$3"
+  [ -z "$ts" ] && return
+  curl -sf -X POST "$SLACK_API/chat.update" \
     -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-    "${params[@]}" &>/dev/null || true
+    -H "Content-Type: application/json; charset=utf-8" \
+    -d "$(jq -n --arg ch "$channel" --arg ts "$ts" --arg txt "$text" \
+      '{channel: $ch, ts: $ts, text: $txt}')" &>/dev/null || true
+}
+
+update_active() {
+  local ts="$1"
+  local text="$2"
+  slack_update "$SLACK_ACTIVE_CHANNEL" "$ts" "$text"
+}
+
+slack_post_thread() {
+  local channel="$1"
+  local thread_ts="$2"
+  local text="$3"
+  [ -z "$thread_ts" ] && return
+  curl -sf -X POST "$SLACK_API/chat.postMessage" \
+    -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+    -H "Content-Type: application/json; charset=utf-8" \
+    -d "$(jq -n --arg ch "$channel" --arg ts "$thread_ts" --arg txt "$text" \
+      '{channel: $ch, thread_ts: $ts, text: $txt}')" &>/dev/null || true
 }
 
 alert_active() {
@@ -65,11 +80,63 @@ alert_digest() {
 }
 
 upload_diagnostic() {
-  local thread_ts="$1"
+  local log_ts="$1"
   local filepath="$2"
   local filename="$3"
-  slack_upload_file "$SLACK_ACTIVE_CHANNEL" "$filepath" "$filename" "$thread_ts"
-  rm -f "$filepath"
+  [ ! -f "$filepath" ] && return
+  [ -z "$log_ts" ] && return
+
+  # Redact RTSP credentials before posting to Slack (full creds stay in on-disk file only)
+  local tmpfile
+  tmpfile=$(mktemp)
+  sed -E 's|rtsp://[^@]+@|rtsp://<credentials>@|g' "$filepath" > "$tmpfile"
+
+  local filesize
+  filesize=$(wc -c < "$tmpfile" | tr -d ' ')
+
+  # Step 1 — get upload URL
+  local url_response upload_url file_id
+  url_response=$(curl -sf -X POST "$SLACK_API/files.getUploadURLExternal" \
+    -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    --data-urlencode "filename=${filename}" \
+    --data-urlencode "length=${filesize}" 2>/dev/null) || true
+
+  upload_url=$(echo "$url_response" | jq -r '.upload_url // empty')
+  file_id=$(echo "$url_response"   | jq -r '.file_id // empty')
+
+  if [ -z "$upload_url" ] || [ -z "$file_id" ]; then
+    rm -f "$tmpfile"
+    # Fallback: post first 50 lines as code block if upload API fails
+    local header
+    header=$(sed -E 's|rtsp://[^@]+@|rtsp://<credentials>@|g' "$filepath" | head -50)
+    slack_post_thread "$SLACK_LOG_CHANNEL" "$log_ts" \
+      "📋 *Diagnostic Report — ${filename}*
+\`\`\`
+${header}
+\`\`\`
+_Full report saved on device: \`$filepath\`_"
+    return
+  fi
+
+  # Step 2 — upload file content
+  curl -sf -X POST "$upload_url" \
+    -H "Content-Type: text/plain" \
+    --data-binary "@$tmpfile" &>/dev/null || true
+
+  rm -f "$tmpfile"
+
+  # Step 3 — complete upload and share to log thread
+  curl -sf -X POST "$SLACK_API/files.completeUploadExternal" \
+    -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n \
+      --arg ch  "$SLACK_LOG_CHANNEL" \
+      --arg ts  "$log_ts" \
+      --arg fid "$file_id" \
+      --arg fn  "$filename" \
+      '{channel_id: $ch, thread_ts: $ts, files: [{id: $fid, title: $fn}], initial_comment: "📋 Diagnostic report (RTSP credentials redacted). Full report with credentials saved on device."}')" \
+    &>/dev/null || true
 }
 
 fmt_first_failure() {

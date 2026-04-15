@@ -24,7 +24,7 @@ init_state() {
   if [ ! -f "$WATCHDOG_STATE_PATH" ] || [ ! -s "$WATCHDOG_STATE_PATH" ] || ! jq empty "$WATCHDOG_STATE_PATH" 2>/dev/null; then
     local tmp
     tmp=$(mktemp)
-    echo '{"issues":{},"consecutiveIdle":0,"consecutiveCpuHigh":0,"pendingQueueHistory":[],"lastHeartbeatAt":0,"weeklyStartAt":0,"lastDigestSentAt":0,"weeklySilentCrashes":0,"weeklyMemoryWarnings":0,"weeklyReboots":0,"weeklyCpuTotal":0,"weeklyCpuSamples":0,"weeklyCpuPeak":0,"weeklyDiskBootPeak":0,"weeklyDiskExtPeak":0,"lastServiceUptimeSeconds":0,"lastBootTime":0}' \
+    echo '{"issues":{},"siteAlertTs":null,"siteLogTs":null,"consecutiveIdle":0,"consecutiveUnreachable":0,"consecutiveCpuHigh":0,"pendingQueueHistory":[],"lastHeartbeatAt":0,"weeklyStartAt":0,"lastDigestSentAt":0,"weeklySilentCrashes":0,"weeklyMemoryWarnings":0,"weeklyReboots":0,"weeklyCpuTotal":0,"weeklyCpuSamples":0,"weeklyCpuPeak":0,"weeklyDiskBootPeak":0,"weeklyDiskExtPeak":0,"lastServiceUptimeSeconds":0,"lastBootTime":0,"serviceRestartBudget":4,"serviceRestartBudgetResetAt":0}' \
       > "$tmp" && mv "$tmp" "$WATCHDOG_STATE_PATH"
   fi
 }

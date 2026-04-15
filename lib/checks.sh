@@ -32,12 +32,20 @@ check_cameras() {
 check_service_status() {
   case "$HEALTH_STATUS" in
     unreachable)
-      echo "service:unreachable|health endpoint did not respond"
+      local consecutive
+      consecutive=$(state_get_field_default "consecutiveUnreachable" "0")
+      consecutive=$((consecutive + 1))
+      state_set_field "consecutiveUnreachable" "$consecutive"
+      if [ "$consecutive" -ge 2 ]; then
+        echo "service:unreachable|health endpoint did not respond (${consecutive} consecutive checks)"
+      fi
       ;;
     down)
+      state_reset_counter "consecutiveUnreachable"
       echo "service:down|status=down (critical infrastructure failure)"
       ;;
     idle)
+      state_reset_counter "consecutiveUnreachable"
       local consecutive
       consecutive=$(state_get_field_default "consecutiveIdle" "0")
       consecutive=$((consecutive + 1))
@@ -51,6 +59,7 @@ check_service_status() {
       fi
       ;;
     recording)
+      state_reset_counter "consecutiveUnreachable"
       state_reset_counter "consecutiveIdle"
       ;;
   esac
@@ -59,12 +68,13 @@ check_service_status() {
 check_disk() {
   # External SSD presence
   if [ "$(external_ssd_present)" = "false" ]; then
-    echo "disk:external|/Volumes/Replays is not in disk list — SSD may be unmounted"
+    echo "disk:external|/Volumes/Replays not mounted — SSD may be disconnected"
   else
-    local ext_use
-    ext_use=$(get_disk_mount "/Volumes/Replays" | jq -r '.use // 0' | cut -d. -f1)
-    if [ "$ext_use" -ge "$THRESHOLD_EXT_DISK" ]; then
-      echo "disk:external:full|/Volumes/Replays is ${ext_use}% used"
+    local ssd_path ext_use
+    [ -d "/Volumes/REPLAYS" ] && ssd_path="/Volumes/REPLAYS" || ssd_path="/Volumes/Replays"
+    ext_use=$(get_disk_use_pct "$ssd_path")
+    if [ "${ext_use:-0}" -ge "$THRESHOLD_EXT_DISK" ]; then
+      echo "disk:external:full|$ssd_path is ${ext_use}% used"
     fi
   fi
 
@@ -119,12 +129,13 @@ check_pending_queue() {
   local queue_path="$RS_DATA_DIR/pending-clips.json"
   [ -f "$queue_path" ] || return
   local count
-  count=$(jq 'length' "$queue_path" 2>/dev/null || echo "0")
+  count=$(jq 'length' "$queue_path" 2>/dev/null)
+  count="${count:-0}"
 
   local history
   history=$(state_get_field "pendingQueueHistory")
   [ -z "$history" ] && history="[]"
-  history=$(echo "$history" | jq --argjson c "$count" --argjson n "${PENDING_QUEUE_GROWTH_CHECKS}" ". + [$c] | .[-$n:]")
+  history=$(echo "$history" | jq --argjson c "$count" --argjson n "${PENDING_QUEUE_GROWTH_CHECKS}" '. + [$c] | .[-$n:]')
   state_set_field "pendingQueueHistory" "$history"
 
   local history_length

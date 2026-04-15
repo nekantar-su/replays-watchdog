@@ -8,7 +8,7 @@ RS_LOG_DIR="$RS_DATA_DIR/log"
 WATCHDOG_STATE_PATH="$RS_DATA_DIR/watchdog-state.json"
 WATCHDOG_LOG="$RS_LOG_DIR/watchdog.log"
 HEALTH_URL="http://localhost:4000/health"
-HEALTH_TIMEOUT=5
+HEALTH_TIMEOUT=10
 
 load_config() {
   if [ ! -f "$WATCHDOG_CONFIG_PATH" ]; then
